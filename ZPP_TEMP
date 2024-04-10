@@ -1,0 +1,267 @@
+*&---------------------------------------------------------------------*
+*& Report ZPP_TEMP
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT ZPP_TEMP.
+"declare of variables
+TABLES: mara , marc.
+types: BEGIN OF t_output.
+TYPES: werks     like MARC-werks,
+       matnr     like MARC-matnr,
+       BSTRF     like MARC-BSTRF,
+       BSTMA     like MARC-BSTMA,
+       SFCPF     like MARC-SFCPF,
+       FEVOR     like MARC-FEVOR,
+       FRTME     like MARC-FRTME,
+       BESKZ     like MARC-BESKZ,
+       KZAUS     like MARC-KZAUS,
+       EISLO     like MARC-EISLO,
+       HERKL     like MARC-HERKL,
+       MMSTD     like MARC-MMSTD,
+       MMSTA     like MARC-MMSTA,
+       PLIFZ     like MARC-PLIFZ,
+       AUSDT     like MARC-AUSDT,
+       NFMAT     like MARC-NFMAT,
+       DISLS     like MARC-DISLS,
+       EKGRP     like MARC-EKGRP,
+       BSTMI     like MARC-BSTMI,
+       MABST     like MARC-MABST,
+       WZEIT     like MARC-WZEIT,
+       STRGR     like MARC-STRGR,
+       LGPRO     like MARC-LGPRO,
+       SOBSL     like MARC-SOBSL,
+       BSTFE     like MARC-BSTFE,
+       MINBE     like MARC-MINBE,
+       EISBE     like MARC-EISBE,
+       MAABC     like MARC-MAABC,
+       DISMM     like MARC-DISMM,
+       DISPO     like MARC-DISPO,
+       MTART     like mara-MTART,               "material type
+       MATKL     like mara-MATKL,               "Material group
+       WGBEZ     like t023t-WGBEZ,              "Material group description
+       MAKTX     like makt-MAKTX,
+       alv_color type lvc_t_scol,
+       END OF t_output.
+
+data: lt_output TYPE TABLE OF t_output  WITH EMPTY KEY.
+
+DATA: salv             type REF TO cl_salv_table,
+      o_events         TYPE REF TO cl_salv_events_table,
+      function_list    type REF TO cl_salv_functions_list,
+      display_settings type REF TO cl_salv_display_settings,
+      selections       type REF TO cl_salv_selections,
+      lo_sort          TYPE REF TO cl_salv_sorts,
+      lo_aggrs         TYPE REF TO cl_salv_aggregations,
+      columns          type REF TO cl_salv_columns_table.
+
+class lcl_events DEFINITION.
+  PUBLIC SECTION.
+    class-METHODS on_double_click
+      for EVENT if_salv_events_actions_table~double_click
+                of cl_salv_events_table
+      IMPORTING row column.
+
+    class-METHODS on_function
+      for event IF_SALV_EVENTS_FUNCTIONS~ADDED_FUNCTION
+                of cl_salv_events_table
+      IMPORTING e_salv_function.
+
+ENDCLASS.
+
+class lcl_events IMPLEMENTATION.
+  METHOD on_double_click.
+    READ TABLE lt_output  INDEX row REFERENCE INTO DATA(dc_ref).
+    IF sy-subrc = 0.
+      ASSIGN dc_ref->(column) TO FIELD-SYMBOL(<fs_dc>).
+      case  column.
+        when  'MATNR'.
+          set PARAMETER ID 'MAT' field dc_ref->matnr.
+          set PARAMETER ID 'WRK' FIELD dc_ref->werks.
+          call TRANSACTION 'MD04' WITHOUT AUTHORITY-CHECK.
+      ENDCASE.
+    endif.
+  ENDMETHOD.
+
+  METHOD on_function.
+    MESSAGE |Functioncode: { e_salv_function }| type 'I'.
+
+    DATA: lt_rows TYPE salv_t_row,
+          lt_cols TYPE salv_t_column.
+    DATA: SELTAB    TYPE TABLE OF RSPARAMS,
+          SELTAB_WA LIKE LINE OF SELTAB.
+
+    DATA(lr_selections)   = salv->get_selections( ).
+    DATA(ls_cell)         = selections->get_current_cell( ).
+    DATA(lt_seleced_rows) = selections->get_selected_rows( ).
+
+*    DATA: lr_selections TYPE REF TO cl_salv_selections.
+    DATA row TYPE i.
+    CASE e_salv_function.
+      WHEN '&Z_MB51'.
+        LOOP AT lt_seleced_rows INTO data(l_row).
+*          CLEAR ls_output.
+          READ TABLE lt_output ASSIGNING FIELD-SYMBOL(<fs_output>) INDEX l_row.
+
+          MOVE: 'MATNR'  TO SELTAB_WA-SELNAME,
+                'S'      TO SELTAB_WA-KIND,      " SELECT-OPTION
+                'I'      TO SELTAB_WA-SIGN,
+                'EQ'     TO SELTAB_WA-OPTION,
+                <fs_output>-matnr     TO SELTAB_WA-LOW.
+          APPEND SELTAB_WA TO SELTAB.
+          CLEAR:SELTAB_WA.
+          MOVE: 'WERKS'  TO SELTAB_WA-SELNAME,
+                'S'      TO SELTAB_WA-KIND,      " SELECT-OPTION
+                'I'      TO SELTAB_WA-SIGN,
+                'EQ'     TO SELTAB_WA-OPTION,
+                <fs_output>-werks     TO SELTAB_WA-LOW.
+          APPEND SELTAB_WA TO SELTAB.
+          CLEAR:SELTAB_WA.
+
+          data(start_day) = CONV d( sy-datum - 1333 ).
+          data(end_day) = sy-datum  .
+        endloop.
+        MOVE: 'BUDAT'          to seltab_wa-selname,
+              'S'              to seltab_wa-kind,
+              'I'      TO SELTAB_WA-SIGN,
+              'BT'     TO SELTAB_WA-OPTION,
+              start_day   TO SELTAB_WA-LOW,
+              end_day    TO SELTAB_WA-high.
+        APPEND SELTAB_WA TO SELTAB.
+        CLEAR:SELTAB_WA.
+
+        submit RM07DOCS      "call transaction MB51
+                with selection-table seltab
+*                  WITH LGORT IN SO_LGORT    "storage location
+*                  WITH BWART in SO_BWART    "movement type
+**                  with VGART in so_VGART    "Trans./Event Type
+*                  WITH USNAM in so_USNAM    "User name
+                WITH mblnr-LOW  EQ ''
+*                  WITH BWART-LOW  EQ ''
+                WITH CHARG-LOW  EQ ''
+*                  WITH XBLNR IN   so_vbeln
+*                  WITH BWART BETWEEN '261' AND '262'
+*                 via selection-screen  "enter selection screen first
+               and return.
+
+    ENDCASE.
+  ENDMETHOD.
+
+ENDCLASS.
+
+"Selection screen
+SELECTION-SCREEN BEGIN OF block block1.
+*select-OPTIONS: s_matnr for mara-matnr.
+SELECT-OPTIONS: so_matnr FOR MARC-MATNR,
+                so_werks FOR MARC-WERKS  OBLIGATORY DEFAULT '0001' to '9999' ,
+                so_mtart for mara-mtart,                       "Material Type
+                so_MATKL FOR mara-MATKL,                       "Material Group
+                so_dispo FOR MARC-dispo,                       "MRP Controller
+                so_EKGRP FOR MARC-EKGRP,                       "purch. Group
+                so_dismm FOR MARC-dismm.                       "MRP type
+
+SELECTION-SCREEN END OF block block1.
+
+START-OF-SELECTION.
+  " Get data
+  SELECT *
+    from mara INNER JOIN marc
+      on mara~matnr = marc~matnr
+    INNER JOIN MAKT ON mara~matnr = makt~matnr
+    left  JOIN t023t ON mara~MATKL = t023t~MATKL
+    INTO CORRESPONDING FIELDS OF TABLE lt_output
+    WHERE mara~matnr  in so_matnr    AND
+          werks       in so_werks AND
+          mtart       in so_mtart AND
+          mara~matkl  in so_MATKL AND
+          dispo       in so_dispo AND
+          ekgrp       in so_EKGRP AND
+          dismm       in so_dismm.
+
+  "Row color
+  LOOP AT lt_output ASSIGNING FIELD-SYMBOL(<f>).
+    if <f>-werks = '0001'.
+      <f>-alv_color = VALUE #( ( color-col = 6
+                               color-int = 0
+                               color-inv = 1 ) ).
+    ENDIF.
+  ENDLOOP.
+  "create salv table
+  TRY.
+      cl_salv_table=>factory(
+      IMPORTING
+        r_salv_table = salv
+        CHANGING
+          t_table = lt_output ).
+
+      "events
+      o_events = salv->GET_EVENT( ).
+      set HANDLER lcl_events=>on_double_click for o_events.
+      set HANDLER lcl_events=>on_function  for o_events.
+
+      "column color
+      salv->GET_COLUMNS( )->SET_COLOR_COLUMN( 'ALV_COLOR').
+      data(o_col) = cast cl_salv_column_table( salv->GET_COLUMNS( )->GET_COLUMN( 'WERKS' ) ).
+      o_col->set_color( VALUE #( col = 5 int = 0 inv = 0 ) ).
+
+      "function list
+      function_list = salv->get_functions( ) .
+      function_list->set_all( ).
+
+      function_list->set_sort_desc( if_salv_c_bool_sap=>true ).
+*    lo_alv_functions_list->set_sort_desc( if_salv_c_bool_sap=>false ).
+
+      "button in GUI Status
+      salv->SET_SCREEN_STATUS(
+      EXPORTING
+        report = sy-repid         "copy frpm program 'SAPLSALV' (transaction SE41 >> Copy Status)
+        pfstatus = 'STANDARD'
+        set_functions = cl_salv_table=>C_FUNCTIONS_ALL ).
+
+      "display settings
+      display_settings = salv->get_display_settings( ).
+      display_settings->set_list_header( 'Materials list' ).
+      display_settings->set_striped_pattern( if_salv_c_bool_sap=>true ).
+
+      "selection
+      selections = salv->GET_SELECTIONS( ).
+      selections->SET_SELECTION_MODE( if_salv_c_selection_mode=>row_column ).
+
+      "columns
+      columns = salv->get_columns( ).
+      columns->set_optimize( abap_true ).
+
+      "Set SORT
+      lo_sort = salv->get_sorts( ).
+*   Set the SORT on the WERKS with Subtotal
+      TRY.
+          CALL METHOD lo_sort->add_sort
+            EXPORTING
+              columnname = 'WERKS'
+              POSITION   = 1
+              SEQUENCE   = 2 "desc , 1 =ascending
+              subtotal   = if_salv_c_bool_sap=>true.
+
+          CALL METHOD lo_sort->add_sort
+            EXPORTING
+              columnname = 'MATNR'
+              POSITION   = 2
+              SEQUENCE   = 1 "2 = desc , 1 =ascending
+              subtotal   = if_salv_c_bool_sap=>false.
+
+        lo_aggrs = salv->get_aggregations( ).
+        CALL METHOD lo_aggrs->add_aggregation
+          EXPORTING
+            columnname  = 'BSTRF'
+            aggregation = if_salv_c_aggregation=>MINIMUM.
+
+        CATCH cx_salv_not_found .                       "#EC NO_HANDLER
+        CATCH cx_salv_existing .                        "#EC NO_HANDLER
+        CATCH cx_salv_data_error .                      "#EC NO_HANDLER
+      ENDTRY.
+
+      "display salv table
+      salv->display( ).
+
+    CATCH cx_salv_msg.
+  ENDTRY.
